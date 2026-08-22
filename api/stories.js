@@ -1,7 +1,7 @@
 // api/stories.js
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Cache-Control', 's-maxage=30, stale-while-revalidate=120');
+  res.setHeader('Cache-Control', 's-maxage=0, max-age=0, no-cache, no-store, must-revalidate');
 
   const RSS_URL = 'https://rss.beehiiv.com/feeds/px5ffXV3ZQ.xml';
 
@@ -13,42 +13,34 @@ export default async function handler(req, res) {
     const itemMatches = xml.match(/<item>[\s\S]*?<\/item>/gi) || [];
 
     for (const itemXml of itemMatches) {
-      // Extract Title
       const titleMatch = itemXml.match(/<title>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/title>/i);
       const title = titleMatch ? titleMatch[1].replace(/<!\[CDATA\[|\]\]>/g, '').trim() : 'Featured Story';
 
-      // Extract Link
       const linkMatch = itemXml.match(/<link>([\s\S]*?)<\/link>/i);
       const link = linkMatch ? linkMatch[1].trim() : '#';
 
-      // Extract Image
       const imageMatch = itemXml.match(/url="([^"]+)"/i) || itemXml.match(/<img[^>]+src="([^">]+)"/i);
       let image = imageMatch ? imageMatch[1] : 'https://placehold.co/1600x900?text=Upscale+Magazine';
       image = image.replace(/width=\d+/, 'width=1600').replace(/w=\d+/, 'w=1600').replace(/quality=\d+/, 'quality=95');
 
-      // Extract official Category tags only
       const categories = [];
       const catMatches = itemXml.matchAll(/<category[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/category>/gi);
       for (const cat of catMatches) {
-        const cleanedCat = cat[1].replace(/<!\[CDATA\[|\]\]>/g, '').toLowerCase().trim();
-        categories.push(cleanedCat);
+        categories.push(cat[1].replace(/<!\[CDATA\[|\]\]>/g, '').toLowerCase().trim());
       }
 
-      // Strictly match posts belonging to "Featured Story" category
-      const isFeaturedStoryCategory = categories.some(c => 
-        c === 'featured story' || 
-        c === 'featured stories' || 
-        c.includes('featured story')
+      const isFeatured = categories.some(c => 
+        c === 'featured story' || c === 'featured stories' || c.includes('featured story')
       );
 
-      // Only add posts strictly assigned to the Featured Story category
-      if (isFeaturedStoryCategory) {
-        items.push({ title, link, image });
-      }
+      items.push({ title, link, image, isFeatured });
     }
 
-    // Return up to 6 strictly category-matched featured stories
-    const result = items.slice(0, 6);
+    const featured = items.filter(i => i.isFeatured);
+    const nonFeatured = items.filter(i => !i.isFeatured);
+
+    // Guaranteed 6 items: Featured Story posts first, padded with latest posts if needed
+    const result = [...featured, ...nonFeatured].slice(0, 6);
 
     return res.status(200).json(result);
   } catch (error) {
